@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from gmail_client import Email
+from .gmail_client import Email
 
 load_dotenv()
 

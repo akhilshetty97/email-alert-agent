@@ -9,7 +9,7 @@ A pass here just means "plausibly job-related" -> send to the classifier.
 
 from __future__ import annotations
 
-from gmail_client import Email
+from .gmail_client import Email
 
 # Substrings checked (case-insensitive) against subject + body.
 KEYWORDS = [

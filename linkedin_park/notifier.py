@@ -3,8 +3,8 @@
 Sends a formatted alert for a relevant email via the Telegram Bot API.
 Config comes from .env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
 
-Run this file directly to discover your chat id after messaging your bot:
-    python notifier.py
+Run this module directly to discover your chat id after messaging your bot:
+    python -m linkedin_park.notifier
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ from urllib.parse import quote
 import requests
 from dotenv import load_dotenv
 
-from classifier import Classification
-from gmail_client import Email
+from .classifier import Classification
+from .gmail_client import Email
 
 load_dotenv()
 
@@ -128,7 +128,7 @@ def notify(email: Email, c: Classification) -> bool:
 def _print_chat_ids() -> None:
     """Helper: call getUpdates and print chat ids from recent messages.
 
-    Message your bot in Telegram first, then run `python notifier.py`.
+    Message your bot in Telegram first, then run `python -m linkedin_park.notifier`.
     """
     if not BOT_TOKEN:
         print("Set TELEGRAM_BOT_TOKEN in .env first.")

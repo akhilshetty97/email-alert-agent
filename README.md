@@ -91,7 +91,7 @@ TELEGRAM_CHAT_ID=123456789
 - **Telegram bot token:** message [@BotFather](https://t.me/BotFather), send
   `/newbot`, follow the prompts, copy the token.
 - **Telegram chat id:** open a chat with your new bot and send it any message,
-  then run `python notifier.py` — it prints the chat id(s) that have messaged
+  then run `python -m linkedin_park.notifier` — it prints the chat id(s) that have messaged
   your bot. Paste the number into `.env`.
 
 ### 4. Run
@@ -199,9 +199,10 @@ from it in Gmail.
 
 | File | Role |
 |------|------|
-| `main.py` | Orchestrates the pipeline |
-| `gmail_client.py` | Gmail OAuth, fetching, labels |
-| `prefilter.py` | Cheap keyword/ATS pre-filter |
-| `classifier.py` | LLM classification (structured JSON) |
-| `notifier.py` | Telegram formatting + sending |
+| `main.py` | Thin entrypoint (`from linkedin_park import main`) |
+| `linkedin_park/pipeline.py` | Orchestrates the pipeline |
+| `linkedin_park/gmail_client.py` | Gmail OAuth, fetching, labels |
+| `linkedin_park/prefilter.py` | Cheap keyword/ATS pre-filter |
+| `linkedin_park/classifier.py` | LLM classification (structured JSON) |
+| `linkedin_park/notifier.py` | Telegram formatting + sending |
 | `.github/workflows/agent.yml` | Scheduled runner |
