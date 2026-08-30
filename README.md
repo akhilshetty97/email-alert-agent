@@ -67,10 +67,39 @@ You should see your ~20 most recent emails printed as `sender | subject | snippe
 
 ---
 
+## Step 3: OpenAI key
+
+Create a file named `.env` in the project root (git-ignored):
+
+```
+OPENAI_API_KEY=sk-...your key...
+```
+
+Get a key at https://platform.openai.com/api-keys. Step 3 uses `gpt-4o-mini`
+(cheap). Only emails that pass the pre-filter are sent to the model, so cost
+stays near zero.
+
+If `OPENAI_API_KEY` is missing or a call fails, the classifier fails *safe*:
+it marks the email relevant and records the error, so nothing important is
+silently dropped.
+
+## Step 2 behavior
+
+`python main.py` now:
+1. Fetches recent emails.
+2. Skips any whose ID is already in `seen.json` (so nothing is reprocessed).
+3. Runs a cheap pre-filter (`prefilter.py`) — job keywords + known ATS senders.
+   Deliberately inclusive: borderline emails pass through to avoid missing a
+   real assessment. Each email is printed as `CANDIDATE` or `skip` with a reason.
+4. Marks everything processed as seen.
+
+Run it twice: the second run should report the first batch as "already seen".
+To reprocess from scratch, delete `seen.json`.
+
 ## Roadmap
 
 - [x] Step 1 — Gmail auth + fetch
-- [ ] Step 2 — Pre-filter + remember (dedup seen message IDs)
-- [ ] Step 3 — Classify with OpenAI (structured JSON)
+- [x] Step 2 — Pre-filter + remember (dedup seen message IDs)
+- [x] Step 3 — Classify with OpenAI (structured JSON)
 - [ ] Step 4 — Notify via Telegram
 - [ ] Step 5 — Schedule (poll loop / cron)
