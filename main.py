@@ -1,11 +1,12 @@
-"""Step 3 entrypoint: fetch -> skip seen -> pre-filter -> classify -> report.
+"""Step 4 entrypoint: fetch -> skip seen -> pre-filter -> classify -> notify.
 
-Pipeline so far:
+Full pipeline:
   fetch (Gmail) -> remember (skip seen) -> pre-filter (cheap keyword/ATS check)
-  -> classify (LLM, only on candidates)
+  -> classify (LLM, only on candidates) -> notify (Telegram, only if relevant)
 
-Notify comes next. For now we print the structured classification for each
-candidate, then mark everything we processed as seen so the next run skips it.
+Seen-marking is deliberate: an email is marked seen once it's been fully
+handled. If a relevant email's Telegram send fails, it is NOT marked seen, so
+the next run retries rather than silently losing the alert.
 
 Run:  python main.py
 """
@@ -13,6 +14,7 @@ Run:  python main.py
 import sys
 
 import classifier
+import notifier
 import prefilter
 from gmail_client import GmailClient
 from store import SeenStore
@@ -46,13 +48,20 @@ def main() -> None:
         print("Nothing new to process.")
         return
 
+    if not notifier.is_configured():
+        print(
+            "Note: Telegram not configured (TELEGRAM_BOT_TOKEN / "
+            "TELEGRAM_CHAT_ID). Relevant emails will be printed but not sent, "
+            "and will be retried next run.\n"
+        )
+
     candidates = 0
     relevant = 0
-    processed_ids = []
+    notified = 0
+    to_mark_seen = []
     for msg_id in new_ids:
         email = client.get_message(msg_id)
         passed, reason = prefilter.check(email)
-        processed_ids.append(msg_id)
 
         if not passed:
             snippet = email.snippet[:SNIPPET_LEN].replace("\n", " ")
@@ -61,6 +70,7 @@ def main() -> None:
             print(f"            Reason: {reason}")
             print(f"            {snippet}")
             print()
+            to_mark_seen.append(msg_id)
             continue
 
         candidates += 1
@@ -73,18 +83,32 @@ def main() -> None:
         print(f"            Action:   {result.action_needed}")
         if result.error:
             print(f"            (error:   {result.error})")
-        print()
-        if result.is_relevant:
-            relevant += 1
 
-    # Mark everything we processed as seen so we don't reprocess next run.
-    seen.mark_many_seen(processed_ids)
+        if not result.is_relevant:
+            print()
+            to_mark_seen.append(msg_id)
+            continue
+
+        relevant += 1
+        sent = notifier.notify(email, result)
+        if sent:
+            notified += 1
+            print("            -> Telegram alert sent")
+            to_mark_seen.append(msg_id)
+        else:
+            # Don't mark seen: retry the alert on the next run.
+            print("            -> alert NOT sent; will retry next run")
+        print()
+
+    # Mark only fully-handled emails as seen.
+    seen.mark_many_seen(to_mark_seen)
 
     print(
-        f"Processed {len(processed_ids)} new emails: "
-        f"{candidates} passed pre-filter, {relevant} classified relevant, "
-        f"{len(processed_ids) - candidates} filtered out. "
-        f"(seen.json now holds {len(seen)} IDs)"
+        f"Processed {len(new_ids)} new emails: "
+        f"{candidates} passed pre-filter, {relevant} relevant, "
+        f"{notified} notified, {len(new_ids) - candidates} filtered out. "
+        f"(seen.json now holds {len(seen)} IDs; "
+        f"{len(new_ids) - len(to_mark_seen)} pending retry)"
     )
 
 

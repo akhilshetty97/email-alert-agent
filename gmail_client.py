@@ -31,6 +31,7 @@ class Email:
     date: str
     body: str
     snippet: str
+    rfc822_msgid: str = ""  # RFC822 Message-ID header, used for Gmail deep links
 
 
 def _get_header(headers: list[dict], name: str) -> str:
@@ -143,4 +144,5 @@ class GmailClient:
             date=_get_header(headers, "Date"),
             body=_extract_plain_text(payload),
             snippet=msg.get("snippet", ""),
+            rfc822_msgid=_get_header(headers, "Message-ID").strip("<>"),
         )

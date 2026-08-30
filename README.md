@@ -83,6 +83,34 @@ If `OPENAI_API_KEY` is missing or a call fails, the classifier fails *safe*:
 it marks the email relevant and records the error, so nothing important is
 silently dropped.
 
+## Step 4: Telegram setup
+
+1. In Telegram, message **@BotFather**, send `/newbot`, follow the prompts, and
+   copy the **bot token** it gives you.
+2. Open a chat with your new bot and send it any message (e.g. "hi"). This is
+   required so the bot can see your chat id.
+3. Add the token to `.env`:
+
+   ```
+   TELEGRAM_BOT_TOKEN=123456:ABC-your-token
+   ```
+
+4. Discover your chat id:
+
+   ```bash
+   python notifier.py
+   ```
+
+   It prints the chat id(s) that have messaged your bot. Add it to `.env`:
+
+   ```
+   TELEGRAM_CHAT_ID=<your id>
+   ```
+
+Now relevant emails trigger a Telegram alert. If Telegram isn't configured, the
+pipeline still runs and prints results; relevant emails are left unmarked so
+they retry once you configure it.
+
 ## Step 2 behavior
 
 `python main.py` now:
@@ -101,5 +129,5 @@ To reprocess from scratch, delete `seen.json`.
 - [x] Step 1 — Gmail auth + fetch
 - [x] Step 2 — Pre-filter + remember (dedup seen message IDs)
 - [x] Step 3 — Classify with OpenAI (structured JSON)
-- [ ] Step 4 — Notify via Telegram
+- [x] Step 4 — Notify via Telegram
 - [ ] Step 5 — Schedule (poll loop / cron)
