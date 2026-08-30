@@ -1,0 +1,12 @@
+# Secrets / credentials
+credentials.json
+token.json
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Local state (added in later steps)
+seen.json
