@@ -8,6 +8,10 @@ on:
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
 
+# Least privilege: the auto-injected GITHUB_TOKEN can only read the repo.
+permissions:
+  contents: read
+
 jobs:
   run-agent:
     runs-on: ubuntu-latest
