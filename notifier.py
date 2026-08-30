@@ -51,17 +51,24 @@ def _sender_name(sender: str) -> str:
 
 
 def _gmail_link(email: Email) -> str:
-    """Gmail deep link to the specific message via rfc822msgid search.
+    """Gmail link to the specific message via an rfc822msgid search.
 
-    This search-based link reliably resolves to the exact message regardless of
-    which label it's under. Returns "" if we have no Message-ID.
+    Uses a query-based search URL (?q=) rather than only a #fragment: query
+    strings survive mobile browser handoff better, so this behaves better on
+    phones. Also keeps the #search fragment for the desktop web app.
+
+    Note: this can only ever open in a *browser*. The Gmail mobile app does not
+    register mail.google.com for deep links, so no URL can open a specific
+    message in the native app. Returns "" if we have no Message-ID.
     """
     msgid = email.rfc822_msgid.strip("<>")
     if not msgid:
         return ""
+    query = f"rfc822msgid:{msgid}"
+    q_enc = quote(query, safe="")
     return (
-        "https://mail.google.com/mail/u/0/#search/"
-        f"rfc822msgid:{quote(msgid)}"
+        "https://mail.google.com/mail/u/0/"
+        f"?view=tl&search=all&q={q_enc}#search/{q_enc}"
     )
 
 

@@ -1,11 +1,13 @@
 # Gmail Job-Alert Agent
 
-A personal, single-user tool that polls Gmail, flags important job emails
-(interviews, assessments, next steps), and (later) pings you on Telegram.
+A personal, single-user tool that scans Gmail, flags important job emails
+(interviews, assessments, next steps), and pings you on Telegram.
 
-Stack: Python + Telegram + OpenAI. Built in small steps.
+Stack: Python + Telegram + OpenAI.
 
-**Status: Step 1 — Gmail auth + fetch.**
+Pipeline: `fetch -> skip already-processed -> pre-filter -> classify (LLM) -> notify`.
+Dedup is stateless — processed emails get a Gmail label (`JobAgentProcessed`) and
+are excluded from the next fetch, so there's no state file or DB to manage.
 
 ---
 
@@ -40,7 +42,8 @@ You only do this once. Budget ~15 minutes.
 
 > Note: while the app is in Testing mode, the refresh token can expire after
 > ~7 days, so you may occasionally need to re-run the OAuth flow. That's fine
-> for a personal tool.
+> for local use. For unattended automation, publish the app (see "Automating"
+> below) so the token stops expiring.
 
 ---
 
@@ -52,18 +55,20 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Run (Step 1)
+## Run
 
 ```bash
 python main.py
 ```
 
 The first run opens a browser window for Google sign-in. Approve the
-`gmail.readonly` scope (you'll see an "unverified app" warning — that's expected
-since the app is in Testing mode; click through with your test-user account).
-A `token.json` is written so future runs don't prompt again.
+`gmail.modify` scope (needed to add the `JobAgentProcessed` label; you'll see an
+"unverified app" warning — expected in Testing mode, click through with your
+test-user account). A `token.json` is written so future runs don't prompt again.
 
-You should see your ~20 most recent emails printed as `sender | subject | snippet`.
+Each run fetches unprocessed emails from the last day, pre-filters, classifies
+the survivors, sends Telegram alerts for the relevant ones, and labels everything
+it handled so it won't be reprocessed.
 
 ---
 
@@ -111,23 +116,57 @@ Now relevant emails trigger a Telegram alert. If Telegram isn't configured, the
 pipeline still runs and prints results; relevant emails are left unmarked so
 they retry once you configure it.
 
-## Step 2 behavior
+## How dedup works
 
-`python main.py` now:
-1. Fetches recent emails.
-2. Skips any whose ID is already in `seen.json` (so nothing is reprocessed).
-3. Runs a cheap pre-filter (`prefilter.py`) — job keywords + known ATS senders.
-   Deliberately inclusive: borderline emails pass through to avoid missing a
-   real assessment. Each email is printed as `CANDIDATE` or `skip` with a reason.
-4. Marks everything processed as seen.
+Processed emails get the Gmail label `JobAgentProcessed`, and the fetch query is
+`-label:JobAgentProcessed newer_than:1d`, so they're never reprocessed. Adding the
+label only touches that label — it does not mark the email read.
 
-Run it twice: the second run should report the first batch as "already seen".
-To reprocess from scratch, delete `seen.json`.
+If a relevant email's Telegram send fails, it is deliberately left unlabeled so
+the next run retries it (no silently lost alerts). To reprocess everything, just
+remove the `JobAgentProcessed` label from those emails in Gmail.
+
+## Automating (GitHub Actions cron)
+
+Runs the agent on a schedule for free, with no server. State lives in Gmail
+(the label), so nothing needs to persist between runs.
+
+1. **Publish the OAuth app** so the refresh token stops expiring after ~7 days:
+   Google Cloud Console -> APIs & Services -> OAuth consent screen ->
+   **Publishing status -> Publish app**. For personal restricted-scope use this
+   is fine; the "unverified" warning stays but the token becomes long-lived.
+   Then re-run `python main.py` locally once to mint a fresh `token.json`.
+
+2. **Add repo secrets** (Settings -> Secrets and variables -> Actions). The two
+   Google files are base64-encoded so they survive as single-line secrets:
+
+   ```bash
+   base64 -i credentials.json | pbcopy   # paste into GOOGLE_CREDENTIALS_B64
+   base64 -i token.json       | pbcopy   # paste into GOOGLE_TOKEN_B64
+   ```
+
+   Secrets to create:
+   - `GOOGLE_CREDENTIALS_B64`
+   - `GOOGLE_TOKEN_B64`
+   - `OPENAI_API_KEY`
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_CHAT_ID`
+
+3. The workflow at [.github/workflows/agent.yml](.github/workflows/agent.yml)
+   runs 4x/day (11am, 3pm, 7pm, 11pm Pacific) and can be triggered manually from
+   the Actions tab (`workflow_dispatch`). Cron times are in **UTC** and do not
+   observe DST — adjust `0 2,6,18,22 * * *` if your offset changes.
+
+Notes:
+- Cost: ~4 runs/day is far within the free Actions minutes.
+- GitHub disables scheduled workflows after 60 days of repo inactivity; a manual
+  run or any commit re-arms them.
+- If you re-consent locally and `token.json` changes, update `GOOGLE_TOKEN_B64`.
 
 ## Roadmap
 
 - [x] Step 1 — Gmail auth + fetch
-- [x] Step 2 — Pre-filter + remember (dedup seen message IDs)
+- [x] Step 2 — Pre-filter + remember (Gmail-label dedup)
 - [x] Step 3 — Classify with OpenAI (structured JSON)
 - [x] Step 4 — Notify via Telegram
-- [ ] Step 5 — Schedule (poll loop / cron)
+- [x] Step 5 — Schedule (GitHub Actions cron)

@@ -1,0 +1,37 @@
+name: Gmail job-alert agent
+
+on:
+  # Times are UTC (GitHub cron does not observe DST).
+  # 0 2,6,18,22 UTC = 7pm, 11pm, 11am, 3pm Pacific (UTC-7).
+  schedule:
+    - cron: "0 2,6,18,22 * * *"
+  # Allow manual runs from the Actions tab.
+  workflow_dispatch:
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write Google credential files from secrets
+        run: |
+          echo "${{ secrets.GOOGLE_CREDENTIALS_B64 }}" | base64 --decode > credentials.json
+          echo "${{ secrets.GOOGLE_TOKEN_B64 }}" | base64 --decode > token.json
+
+      - name: Run agent
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py

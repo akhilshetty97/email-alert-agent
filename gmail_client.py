@@ -1,8 +1,10 @@
-"""Gmail read-only client: OAuth handling + message fetching.
+"""Gmail client: OAuth handling, message fetching, and label management.
 
-Step 1 of the Gmail Job-Alert Agent. Exposes a small surface:
+Exposes a small surface:
   - GmailClient.list_recent_messages()
   - GmailClient.get_message(message_id)
+  - GmailClient.ensure_label(name)
+  - GmailClient.add_label(message_id, label_id)
 """
 
 from __future__ import annotations
@@ -11,13 +13,15 @@ import base64
 import os
 from dataclasses import dataclass
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-# Read-only is all we need. If you change scopes, delete token.json to re-consent.
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# gmail.modify is needed to add our "processed" label (readonly can't modify).
+# If you change scopes, delete token.json to re-consent.
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 CREDENTIALS_FILE = "credentials.json"
 TOKEN_FILE = "token.json"
@@ -93,12 +97,21 @@ class GmailClient:
         if os.path.exists(self.token_file):
             creds = Credentials.from_authorized_user_file(self.token_file, SCOPES)
 
+        # A stored token granted for different scopes can't be reused or
+        # refreshed for the new scopes; force a fresh consent in that case.
+        if creds and not creds.has_scopes(SCOPES):
+            creds = None
+
         if creds and creds.valid:
             return creds
 
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except RefreshError:
+                creds = None  # expired/revoked/scope-changed -> re-consent below
+
+        if creds is None or not creds.valid:
             if not os.path.exists(self.credentials_file):
                 raise FileNotFoundError(
                     f"Missing {self.credentials_file}. See README Step 1 for how to "
@@ -128,6 +141,22 @@ class GmailClient:
         )
         return [m["id"] for m in resp.get("messages", [])]
 
+    def list_message_ids(self, query: str) -> list[str]:
+        """Return all message IDs matching a Gmail search query (paginated)."""
+        ids = []
+        page_token = None
+        while True:
+            resp = (
+                self.service.users()
+                .messages()
+                .list(userId="me", q=query, pageToken=page_token)
+                .execute()
+            )
+            ids.extend(m["id"] for m in resp.get("messages", []))
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                return ids
+
     def get_message(self, message_id: str) -> Email:
         msg = (
             self.service.users()
@@ -146,3 +175,31 @@ class GmailClient:
             snippet=msg.get("snippet", ""),
             rfc822_msgid=_get_header(headers, "Message-ID").strip("<>"),
         )
+
+    def ensure_label(self, name: str) -> str:
+        """Return the label id for `name`, creating the label if it's missing."""
+        resp = self.service.users().labels().list(userId="me").execute()
+        for label in resp.get("labels", []):
+            if label.get("name") == name:
+                return label["id"]
+        created = (
+            self.service.users()
+            .labels()
+            .create(
+                userId="me",
+                body={
+                    "name": name,
+                    "labelListVisibility": "labelShow",
+                    "messageListVisibility": "show",
+                },
+            )
+            .execute()
+        )
+        return created["id"]
+
+    def add_label(self, message_id: str, label_id: str) -> None:
+        """Add a label to a message. Only touches the given label; read/unread
+        status (the UNREAD label) is left untouched."""
+        self.service.users().messages().modify(
+            userId="me", id=message_id, body={"addLabelIds": [label_id]}
+        ).execute()

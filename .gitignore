@@ -7,6 +7,3 @@ token.json
 venv/
 __pycache__/
 *.pyc
-
-# Local state (added in later steps)
-seen.json
