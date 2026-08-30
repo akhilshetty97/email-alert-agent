@@ -15,6 +15,8 @@ Runs once and exits. Schedule it with cron or a CI scheduler (see README).
 Run:  python main.py
 """
 
+import logging
+import os
 import sys
 
 import classifier
@@ -26,88 +28,97 @@ PROCESSED_LABEL = "JobAgentProcessed"
 # Only look at unprocessed mail from the last day. Label dedup prevents repeats,
 # so a 1-day window safely covers the largest gap between scheduled runs.
 FETCH_QUERY = f"-label:{PROCESSED_LABEL} newer_than:1d"
-SNIPPET_LEN = 100
+
+DEBUG = os.getenv("AGENT_DEBUG") == "1"
+logging.basicConfig(
+    level=logging.DEBUG if DEBUG else logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("agent")
 
 
 def run_once(client: GmailClient, label_id: str) -> None:
+    log.info("Step: fetch unprocessed emails (last 1 day)")
     message_ids = client.list_message_ids(FETCH_QUERY)
-    print(f"Fetched {len(message_ids)} unprocessed emails from the last day.\n")
-
+    log.info("Fetched %d unprocessed email(s)", len(message_ids))
     if not message_ids:
-        print("Nothing new to process.")
+        log.info("Nothing to process; done")
         return
 
     if not notifier.is_configured():
-        print(
-            "Note: Telegram not configured (TELEGRAM_BOT_TOKEN / "
-            "TELEGRAM_CHAT_ID). Relevant emails will be printed but not sent, "
-            "and will be retried next run.\n"
+        log.warning(
+            "Telegram not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID); "
+            "relevant emails will not be sent and will retry next run"
         )
 
+    total = len(message_ids)
     candidates = 0
     relevant = 0
     notified = 0
     processed = 0
-    for msg_id in message_ids:
+    log.info("Step: process %d email(s)", total)
+    for i, msg_id in enumerate(message_ids, start=1):
         email = client.get_message(msg_id)
-        passed, reason = prefilter.check(email)
+        # Sensitive content only in debug (never in public CI logs).
+        log.debug("[%d/%d] from=%r subject=%r", i, total, email.sender, email.subject)
 
+        passed, reason = prefilter.check(email)
         if not passed:
-            snippet = email.snippet[:SNIPPET_LEN].replace("\n", " ")
-            print(f"[  skip   ] {email.subject}")
-            print(f"            From:   {email.sender}")
-            print(f"            Reason: {reason}")
-            print(f"            {snippet}")
-            print()
+            log.info("[%d/%d] pre-filter: skip", i, total)
             client.add_label(msg_id, label_id)
             processed += 1
             continue
 
         candidates += 1
         result = classifier.classify(email)
-        flag = "RELEVANT" if result.is_relevant else "not rel."
-        print(f"[CLASSIFY:{flag}] {email.subject}")
-        print(f"            From:     {email.sender}")
-        print(f"            Category: {result.category}")
-        print(f"            Summary:  {result.summary}")
-        print(f"            Action:   {result.action_needed}")
         if result.error:
-            print(f"            (error:   {result.error})")
+            log.error("[%d/%d] classify failed (flagged safe): %s", i, total, result.error)
+        log.info(
+            "[%d/%d] pre-filter: pass; classify: %s (%s)",
+            i,
+            total,
+            "relevant" if result.is_relevant else "not-relevant",
+            result.category,
+        )
+        log.debug("[%d/%d] summary=%r action=%r", i, total, result.summary, result.action_needed)
 
         if not result.is_relevant:
-            print()
             client.add_label(msg_id, label_id)
             processed += 1
             continue
 
         relevant += 1
-        sent = notifier.notify(email, result)
-        if sent:
+        if notifier.notify(email, result):
             notified += 1
-            print("            -> Telegram alert sent")
+            log.info("[%d/%d] notify: sent", i, total)
             client.add_label(msg_id, label_id)
             processed += 1
         else:
             # Don't label: retry the alert on the next run.
-            print("            -> alert NOT sent; will retry next run")
-        print()
+            log.warning("[%d/%d] notify: failed; left unlabeled for retry", i, total)
 
-    print(
-        f"Processed {len(message_ids)} emails: "
-        f"{candidates} passed pre-filter, {relevant} relevant, "
-        f"{notified} notified, {len(message_ids) - candidates} filtered out. "
-        f"({len(message_ids) - processed} left unlabeled for retry)"
+    log.info(
+        "Done. fetched=%d prefiltered_in=%d relevant=%d notified=%d "
+        "filtered_out=%d retry_pending=%d",
+        total,
+        candidates,
+        relevant,
+        notified,
+        total - candidates,
+        total - processed,
     )
 
 
 def main() -> None:
-    print("Authenticating to Gmail (a browser may open on first run)...")
+    log.info("Step: authenticate to Gmail")
     try:
         client = GmailClient()
     except FileNotFoundError as e:
-        print(f"\nSetup incomplete: {e}", file=sys.stderr)
+        log.error("Setup incomplete: %s", e)
         sys.exit(1)
 
+    log.info("Step: ensure label %r", PROCESSED_LABEL)
     label_id = client.ensure_label(PROCESSED_LABEL)
     run_once(client, label_id)
 

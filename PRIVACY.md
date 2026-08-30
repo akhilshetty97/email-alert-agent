@@ -1,7 +1,7 @@
 # Privacy Policy
 
-**Gmail Job-Alert Agent** is a personal, single-user application operated by its
-owner for their own use only. It is not offered as a service to other people.
+**LinkedIn Park** is a personal, single-user application operated by its owner
+for their own use only. It is not offered as a service to other people.
 
 ## What it does
 
