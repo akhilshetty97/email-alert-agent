@@ -3,7 +3,7 @@
 *An AI agent that catches the job emails you can't afford to miss.*
 
 When you're job hunting, your inbox floods with "thanks for applying"
-auto-replies — and the one email that actually matters (an interview invite, a
+auto-replies and the one email that actually matters (an interview invite, a
 coding assessment with a deadline) gets buried. **LinkedIn Park** scans your
 Gmail, uses an LLM to figure out which emails need your attention, and pings you
 on Telegram with a short summary and the action required.
@@ -23,6 +23,9 @@ Built after missing a real assessment deadline. Never again.
 - Remembers what it has handled using a Gmail label, so you're never pinged twice.
 
 ### Pipeline
+<img width="1002" height="554" alt="image" src="https://github.com/user-attachments/assets/f4765e02-6b64-444b-bef2-090a5b25ba0e" />
+
+
 
 ```
 fetch (Gmail) -> pre-filter (keywords/ATS) -> classify (LLM) -> notify (Telegram)
@@ -30,7 +33,7 @@ fetch (Gmail) -> pre-filter (keywords/ATS) -> classify (LLM) -> notify (Telegram
 ```
 
 Dedup is **stateless**: handled emails get a Gmail label (`JobAgentProcessed`) and
-are excluded from the next fetch — no database or state file to manage.
+are excluded from the next fetch, no database or state file to manage.
 
 ### Tech stack
 
@@ -146,52 +149,15 @@ Notes:
 - Cost: 4 runs/day is far within the free Actions minutes.
 - GitHub disables scheduled workflows after 60 days of repo inactivity; a manual
   run or any commit re-arms them.
-- If you re-consent locally and `token.json` changes, update `GOOGLE_TOKEN_B64`.
-
----
-
-## Logging
-
-Logs are intentionally high-level, so they're safe even in a public repo (where
-Actions logs are world-readable). By default you get step markers, per-email
-outcomes, and counts — **no email content**:
-
-```
-Step: fetch unprocessed emails (last 1 day)
-Fetched 2 unprocessed email(s)
-[1/2] pre-filter: pass; classify: relevant (assessment)
-[1/2] notify: sent
-Done. fetched=2 prefiltered_in=2 relevant=2 notified=2 filtered_out=0 retry_pending=0
-```
-
-For local debugging, set `AGENT_DEBUG=1` to also log subjects, senders, and
-summaries. Never set this in CI:
-
-```bash
-AGENT_DEBUG=1 python main.py
-```
-
----
-
-## How dedup works
-
-Handled emails get the Gmail label `JobAgentProcessed`; the fetch query is
-`-label:JobAgentProcessed newer_than:1d`, so they're never reprocessed. Adding the
-label only touches that label — it does not mark the email read. If a relevant
-email's Telegram send fails, it's deliberately left unlabeled so the next run
-retries it (no silently lost alerts). To reprocess an email, remove the label
-from it in Gmail.
 
 ---
 
 ## Security
 
-- Secrets (`credentials.json`, `token.json`, `.env`) are git-ignored — never commit them.
-- In CI they're stored as encrypted GitHub Actions secrets; fork pull requests
+- In CI the keys are stored as encrypted GitHub Actions secrets; fork pull requests
   cannot access them, and the workflow's `GITHUB_TOKEN` is limited to `contents: read`.
 - Revoke the app's access anytime at
   [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
-- Enable 2FA on your Google and GitHub accounts.
 
 ---
 
