@@ -128,6 +128,11 @@ class GmailClient:
         creds = self._load_credentials()
         return build("gmail", "v1", credentials=creds)
 
+    def get_profile_email(self) -> str:
+        """Return the authenticated account's email address."""
+        profile = self.service.users().getProfile(userId="me").execute()
+        return profile.get("emailAddress", "")
+
     def list_recent_messages(self, max_results: int = 20, query: str = "") -> list[str]:
         """Return recent message IDs (newest first).
 

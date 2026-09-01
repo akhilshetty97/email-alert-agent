@@ -1,6 +1,7 @@
 # Secrets / credentials
 credentials.json
 token.json
+token*.json
 .env
 
 # Python

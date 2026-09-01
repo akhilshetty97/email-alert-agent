@@ -139,6 +139,7 @@ needs to persist between runs.
    - `OPENAI_API_KEY`
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
+   - `GOOGLE_TOKEN2_B64` — only if you added a second inbox
 
 3. The workflow at [.github/workflows/agent.yml](.github/workflows/agent.yml) runs
    4x/day and supports manual runs from the Actions tab (`workflow_dispatch`).

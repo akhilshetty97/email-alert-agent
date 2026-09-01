@@ -29,6 +29,11 @@ PROCESSED_LABEL = "JobAgentProcessed"
 # so a 1-day window safely covers the largest gap between scheduled runs.
 FETCH_QUERY = f"-label:{PROCESSED_LABEL} newer_than:1d"
 
+# One token file per Gmail account
+TOKEN_FILES = [
+    t.strip() for t in os.getenv("GMAIL_TOKEN_FILES", "token.json").split(",") if t.strip()
+]
+
 DEBUG = os.getenv("AGENT_DEBUG") == "1"
 logging.basicConfig(
     level=logging.DEBUG if DEBUG else logging.INFO,
@@ -38,7 +43,7 @@ logging.basicConfig(
 log = logging.getLogger("agent")
 
 
-def run_once(client: GmailClient, label_id: str) -> None:
+def run_once(client: GmailClient, label_id: str, account: str = "") -> None:
     log.info("Step: fetch unprocessed emails (last 1 day)")
     message_ids = client.list_message_ids(FETCH_QUERY)
     log.info("Fetched %d unprocessed email(s)", len(message_ids))
@@ -89,7 +94,7 @@ def run_once(client: GmailClient, label_id: str) -> None:
             continue
 
         relevant += 1
-        if notifier.notify(email, result):
+        if notifier.notify(email, result, account=account):
             notified += 1
             log.info("[%d/%d] notify: sent", i, total)
             client.add_label(msg_id, label_id)
@@ -110,17 +115,34 @@ def run_once(client: GmailClient, label_id: str) -> None:
     )
 
 
-def main() -> None:
-    log.info("Step: authenticate to Gmail")
+def run_account(token_file: str, multi: bool) -> None:
+    """Run the pipeline for a single Gmail account (identified by its token file)."""
+    log.info("Account: authenticate to Gmail using %r", token_file)
     try:
-        client = GmailClient()
+        client = GmailClient(token_file=token_file)
     except FileNotFoundError as e:
-        log.error("Setup incomplete: %s", e)
-        sys.exit(1)
+        # Missing token for this account: skip it, but keep other accounts running.
+        log.error("Skipping account %r: %s", token_file, e)
+        return
+
+    account = client.get_profile_email()
+    log.info("Account: authenticated as %s", account)
 
     log.info("Step: ensure label %r", PROCESSED_LABEL)
     label_id = client.ensure_label(PROCESSED_LABEL)
-    run_once(client, label_id)
+    # Only tag notifications with the inbox when more than one is configured.
+    run_once(client, label_id, account=account if multi else "")
+
+
+def main() -> None:
+    if not TOKEN_FILES:
+        log.error("No accounts configured (GMAIL_TOKEN_FILES is empty)")
+        sys.exit(1)
+
+    multi = len(TOKEN_FILES) > 1
+    log.info("Configured %d account(s)", len(TOKEN_FILES))
+    for token_file in TOKEN_FILES:
+        run_account(token_file, multi)
 
 
 if __name__ == "__main__":

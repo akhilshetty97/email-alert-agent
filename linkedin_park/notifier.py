@@ -50,12 +50,16 @@ def _sender_name(sender: str) -> str:
     return name or addr or sender
 
 
-def _gmail_link(email: Email) -> str:
+def _gmail_link(email: Email, account: str = "") -> str:
     """Gmail link to the specific message via an rfc822msgid search.
 
     Uses a query-based search URL (?q=) rather than only a #fragment: query
     strings survive mobile browser handoff better, so this behaves better on
     phones. Also keeps the #search fragment for the desktop web app.
+
+    When `account` is given, `authuser` targets that specific inbox so the link
+    opens the right account in a multi-account browser session (a hardcoded
+    /u/0/ would open the wrong inbox for a second account).
 
     Note: this can only ever open in a *browser*. The Gmail mobile app does not
     register mail.google.com for deep links, so no URL can open a specific
@@ -66,19 +70,22 @@ def _gmail_link(email: Email) -> str:
         return ""
     query = f"rfc822msgid:{msgid}"
     q_enc = quote(query, safe="")
+    authuser = f"authuser={quote(account, safe='')}&" if account else ""
     return (
         "https://mail.google.com/mail/u/0/"
-        f"?view=tl&search=all&q={q_enc}#search/{q_enc}"
+        f"?{authuser}view=tl&search=all&q={q_enc}#search/{q_enc}"
     )
 
 
-def format_message(email: Email, c: Classification) -> str:
+def format_message(email: Email, c: Classification, account: str = "") -> str:
     """Build a compact HTML Telegram message. All dynamic text is escaped."""
     label = CATEGORY_LABELS.get(c.category, c.category.replace("_", " ").title())
     category = html.escape(label)
     sender = html.escape(_sender_name(email.sender))
 
     lines = [f"<b>{category}</b> - {sender}"]
+    if account:
+        lines.append(f"<b>Inbox:</b> {html.escape(account)}")
     if c.summary:
         lines.append(f"<b>Summary:</b> {html.escape(c.summary)}")
 
@@ -86,7 +93,7 @@ def format_message(email: Email, c: Classification) -> str:
     if action and action.lower() != "none":
         lines.append(f"<b>Likely action:</b> {html.escape(action)}")
 
-    link = _gmail_link(email)
+    link = _gmail_link(email, account)
     if link:
         lines.append(f'<a href="{html.escape(link)}">Open in Gmail</a>')
 
@@ -121,8 +128,8 @@ def send(text: str) -> bool:
         return False
 
 
-def notify(email: Email, c: Classification) -> bool:
-    return send(format_message(email, c))
+def notify(email: Email, c: Classification, account: str = "") -> bool:
+    return send(format_message(email, c, account))
 
 
 def _print_chat_ids() -> None:
